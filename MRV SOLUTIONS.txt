@@ -1,0 +1,1000 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Scalable MRV Solution</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #1a202c;
+            color: #e2e8f0;
+        }
+        .modal {
+            display: none;
+            position: fixed;
+            z-index: 1;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            overflow: auto;
+            background-color: rgba(0,0,0,0.6);
+            align-items: center;
+            justify-content: center;
+        }
+        .modal-content {
+            background-color: #2d3748;
+            padding: 24px;
+            border-radius: 12px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            color: #e2e8f0;
+        }
+        .hidden {
+            display: none;
+        }
+        input, select, button {
+            transition: all 0.3s ease;
+        }
+        input:focus {
+            outline: none;
+            box-shadow: 0 0 0 2px #4299e1;
+        }
+        .tab-content {
+            display: none;
+        }
+        .tab-content.active {
+            display: block;
+        }
+        .tab-button.active {
+            background-color: #2d3748;
+            border-bottom: 2px solid #38a169;
+            color: #e2e8f0;
+        }
+        .chat-message {
+            max-width: 80%;
+            padding: 8px 12px;
+            border-radius: 12px;
+            margin-bottom: 8px;
+        }
+        .chat-message.user {
+            background-color: #4c51bf;
+            align-self: flex-end;
+            text-align: right;
+        }
+        .chat-message.assistant {
+            background-color: #2d3748;
+            align-self: flex-start;
+            text-align: left;
+        }
+    </style>
+</head>
+<body class="bg-gray-900 p-6 flex flex-col items-center min-h-screen">
+
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.3/firebase-app.js";
+        import { getAuth, signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut, onAuthStateChanged, signInWithCustomToken, signInAnonymously } from "https://www.gstatic.com/firebasejs/10.12.3/firebase-auth.js";
+        import { getFirestore, doc, setDoc, addDoc, getDoc, deleteDoc, collection, onSnapshot, query, where, getDocs, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.3/firebase-firestore.js";
+        import { setLogLevel } from "https://www.gstatic.com/firebasejs/10.12.3/firebase-firestore.js";
+        setLogLevel('debug');
+
+        // Global variables for Firebase configuration provided by the environment.
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+        const firebaseConfig = JSON.parse(typeof __firebase_config !== 'undefined' ? __firebase_config : '{}');
+        const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
+
+        const app = initializeApp(firebaseConfig);
+        const auth = getAuth(app);
+        const db = getFirestore(app);
+        
+        // UI Elements
+        const mainApp = document.getElementById('main-app');
+        const authScreen = document.getElementById('auth-screen');
+        const loginForm = document.getElementById('login-form');
+        const registerForm = document.getElementById('register-form');
+        const loginToggleBtn = document.getElementById('login-toggle');
+        const registerToggleBtn = document.getElementById('register-toggle');
+        const logoutBtn = document.getElementById('logout-btn');
+        const loadingIndicator = document.getElementById('loading-indicator');
+        const userIdDisplay = document.getElementById('user-id-display');
+        const userEmailDisplay = document.getElementById('user-email-display');
+        const messageBox = document.getElementById('message-box');
+        const messageText = document.getElementById('message-text');
+        const closeMessageBoxBtn = document.getElementById('close-message-box');
+        const summaryModal = document.getElementById('summary-modal');
+        const summaryContent = document.getElementById('summary-content');
+        const summaryLoading = document.getElementById('summary-loading');
+        const closeSummaryModalBtn = document.getElementById('close-summary-modal');
+        const newsContent = document.getElementById('news-content');
+        const newsLoading = document.getElementById('news-loading');
+        const summarizeBtn = document.getElementById('summarize-btn');
+        const fetchNewsBtn = document.getElementById('fetch-news-btn');
+
+        // Navigation Tabs
+        const homeTabBtn = document.getElementById('home-tab-btn');
+        const assistantTabBtn = document.getElementById('assistant-tab-btn');
+        const contactsTabBtn = document.getElementById('contacts-tab-btn');
+        const contactTabBtn = document.getElementById('contact-tab-btn');
+
+        const homeTabContent = document.getElementById('home-tab-content');
+        const assistantTabContent = document.getElementById('assistant-tab-content');
+        const contactsTabContent = document.getElementById('contacts-tab-content');
+        const contactTabContent = document.getElementById('contact-tab-content');
+
+        // Assistant UI
+        const assistantChat = document.getElementById('assistant-chat');
+        const assistantInput = document.getElementById('assistant-input');
+        const assistantSendBtn = document.getElementById('assistant-send-btn');
+        const assistantLoading = document.getElementById('assistant-loading');
+
+        // Contacts UI
+        const usersList = document.getElementById('users-list');
+        const chatModal = document.getElementById('chat-modal');
+        const chatTitle = document.getElementById('chat-title');
+        const chatMessages = document.getElementById('chat-messages');
+        const chatInput = document.getElementById('chat-input');
+        const chatSendBtn = document.getElementById('chat-send-btn');
+        const closeChatModalBtn = document.getElementById('close-chat-modal');
+
+        // Contact Us UI
+        const contactForm = document.getElementById('contact-form');
+
+        // Main App UI Elements
+        const farmerNameElem = document.getElementById('farmer-name');
+        const farmerLocationElem = document.getElementById('farmer-location');
+        const farmSizeElem = document.getElementById('farm-size');
+        const editFarmerBtn = document.getElementById('edit-farmer-btn');
+        const dataEntryForm = document.getElementById('data-entry-form');
+        const dataTableBody = document.getElementById('data-table-body');
+        const noDataMessage = document.getElementById('no-data-message');
+        const farmerModal = document.getElementById('farmer-modal');
+        const farmerDetailsForm = document.getElementById('farmer-details-form');
+        const closeModalBtn = document.getElementById('close-modal-btn');
+        const modalNameInput = document.getElementById('modal-name-input');
+        const modalLocationInput = document.getElementById('modal-location-input');
+        const modalSizeInput = document.getElementById('modal-size-input');
+        const dateInput = document.getElementById('date-input');
+
+        let userState = null;
+        let unsubscribeFarmerData = null;
+        let unsubscribeDataTable = null;
+        let unsubscribeUsers = null;
+        let unsubscribeChat = null;
+        let currentChatId = null;
+
+        const API_URL_GENERATION = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent?key=';
+        const API_KEY = "";
+
+        // Function to show a message box instead of alert()
+        function showMessage(message, isError = false) {
+            messageText.textContent = message;
+            messageBox.style.display = 'flex';
+            messageBox.style.backgroundColor = isError ? 'rgba(255, 0, 0, 0.2)' : 'rgba(0, 128, 0, 0.2)';
+            messageBox.style.borderColor = isError ? '#ef4444' : '#22c55e';
+        }
+
+        closeMessageBoxBtn.addEventListener('click', () => {
+            messageBox.style.display = 'none';
+        });
+
+        // Tab Navigation
+        function switchTab(tabName) {
+            const tabs = {
+                'home': homeTabContent,
+                'assistant': assistantTabContent,
+                'contacts': contactsTabContent,
+                'contact': contactTabContent
+            };
+
+            const tabButtons = {
+                'home': homeTabBtn,
+                'assistant': assistantTabBtn,
+                'contacts': contactsTabBtn,
+                'contact': contactTabBtn
+            };
+
+            for (const name in tabs) {
+                tabs[name].classList.remove('active');
+                tabButtons[name].classList.remove('active');
+            }
+            tabs[tabName].classList.add('active');
+            tabButtons[tabName].classList.add('active');
+        }
+
+        homeTabBtn.addEventListener('click', () => switchTab('home'));
+        assistantTabBtn.addEventListener('click', () => switchTab('assistant'));
+        contactsTabBtn.addEventListener('click', () => switchTab('contacts'));
+        contactTabBtn.addEventListener('click', () => switchTab('contact'));
+
+        // Function to control UI based on authentication state
+        const updateUI = async (user) => {
+            if (user) {
+                userState = user;
+                authScreen.classList.add('hidden');
+                mainApp.classList.remove('hidden');
+                userIdDisplay.textContent = user.uid;
+                userEmailDisplay.textContent = user.email || 'N/A';
+                await saveUserToPublicProfile(user);
+                setupFirestoreListeners(user.uid);
+                switchTab('home'); // Default to home tab
+            } else {
+                userState = null;
+                authScreen.classList.remove('hidden');
+                mainApp.classList.add('hidden');
+                userIdDisplay.textContent = '';
+                userEmailDisplay.textContent = '';
+                if (unsubscribeFarmerData) unsubscribeFarmerData();
+                if (unsubscribeDataTable) unsubscribeDataTable();
+                if (unsubscribeUsers) unsubscribeUsers();
+            }
+        };
+        
+        // Save user profile to public collection
+        async function saveUserToPublicProfile(user) {
+            const userProfileRef = doc(db, 'artifacts', appId, 'public', 'data', 'users_profiles', user.uid);
+            await setDoc(userProfileRef, {
+                uid: user.uid,
+                email: user.email,
+                name: user.email?.split('@')[0] || 'Anonymous',
+                lastSeen: serverTimestamp()
+            }, { merge: true });
+        }
+
+
+        // Firebase Auth State Listener
+        onAuthStateChanged(auth, async (user) => {
+            loadingIndicator.classList.add('hidden');
+            if (user) {
+                updateUI(user);
+            } else {
+                updateUI(null);
+                // If there's no user and a custom token is available, sign in
+                if (initialAuthToken) {
+                    signInWithCustomToken(auth, initialAuthToken)
+                        .then(() => {
+                            // Signed in with custom token
+                        })
+                        .catch((error) => {
+                            console.error("Error signing in with custom token:", error);
+                            showMessage("Error signing in. Please check your token or credentials.", true);
+                            signInAnonymously(auth).catch((err) => console.error("Anonymous sign-in failed:", err));
+                        });
+                } else {
+                    signInAnonymously(auth).catch((err) => console.error("Anonymous sign-in failed:", err));
+                }
+            }
+        });
+
+        // Toggle between login and registration forms
+        loginToggleBtn.addEventListener('click', () => {
+            loginForm.classList.remove('hidden');
+            registerForm.classList.add('hidden');
+        });
+        registerToggleBtn.addEventListener('click', () => {
+            loginForm.classList.add('hidden');
+            registerForm.classList.remove('hidden');
+        });
+
+        // Login & Registration
+        loginForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const email = e.target.email.value;
+            const password = e.target.password.value;
+            try {
+                await signInWithEmailAndPassword(auth, email, password);
+                showMessage('Login successful!');
+            } catch (error) {
+                showMessage(`Login failed: ${error.message}`, true);
+            }
+        });
+
+        registerForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const email = e.target.email.value;
+            const password = e.target.password.value;
+            try {
+                await createUserWithEmailAndPassword(auth, email, password);
+                showMessage('Registration successful! You are now logged in.');
+            } catch (error) {
+                showMessage(`Registration failed: ${error.message}`, true);
+            }
+        });
+
+        logoutBtn.addEventListener('click', async () => {
+            try {
+                await signOut(auth);
+                showMessage('You have been logged out.');
+            } catch (error) {
+                showMessage(`Logout failed: ${error.message}`, true);
+            }
+        });
+
+        // Firestore Setup and Data Handling
+        const setupFirestoreListeners = (userId) => {
+            // Unsubscribe from previous listeners to prevent duplicates
+            if (unsubscribeFarmerData) unsubscribeFarmerData();
+            if (unsubscribeDataTable) unsubscribeDataTable();
+            if (unsubscribeUsers) unsubscribeUsers();
+
+            const farmerDocRef = doc(db, 'artifacts', appId, 'users', userId, 'farmer_details', 'data');
+            const dataCollectionRef = collection(db, 'artifacts', appId, 'users', userId, 'mrv_data');
+            const usersCollectionRef = collection(db, 'artifacts', appId, 'public', 'data', 'users_profiles');
+
+            // Listen for farmer details changes
+            unsubscribeFarmerData = onSnapshot(farmerDocRef, (docSnap) => {
+                if (docSnap.exists()) {
+                    const data = docSnap.data();
+                    farmerNameElem.textContent = data.name || 'N/A';
+                    farmerLocationElem.textContent = data.location || 'N/A';
+                    farmSizeElem.textContent = data.size || 'N/A';
+                } else {
+                    farmerNameElem.textContent = 'N/A';
+                    farmerLocationElem.textContent = 'N/A';
+                    farmSizeElem.textContent = 'N/A';
+                }
+            }, (error) => {
+                console.error("Error fetching farmer details:", error);
+                showMessage("Failed to load farmer details.", true);
+            });
+
+            // Listen for data table changes
+            const q = query(dataCollectionRef);
+            unsubscribeDataTable = onSnapshot(q, (snapshot) => {
+                dataTableBody.innerHTML = '';
+                if (snapshot.empty) {
+                    noDataMessage.classList.remove('hidden');
+                } else {
+                    noDataMessage.classList.add('hidden');
+                    snapshot.forEach(doc => {
+                        const data = doc.data();
+                        const row = document.createElement('tr');
+                        row.classList.add('border-b', 'border-gray-700');
+                        row.innerHTML = `
+                            <td class="py-3 px-4">${data.date}</td>
+                            <td class="py-3 px-4">${data.yield}</td>
+                            <td class="py-3 px-4">${data.trees}</td>
+                            <td class="py-3 px-4">
+                                <button onclick="deleteData('${doc.id}')" class="text-red-400 hover:text-red-500 font-medium">Delete</button>
+                            </td>
+                        `;
+                        dataTableBody.appendChild(row);
+                    });
+                }
+            }, (error) => {
+                console.error("Error fetching data table:", error);
+                showMessage("Failed to load data table.", true);
+            });
+
+            // Listen for other users
+            unsubscribeUsers = onSnapshot(usersCollectionRef, (snapshot) => {
+                usersList.innerHTML = '';
+                snapshot.forEach(doc => {
+                    const userData = doc.data();
+                    if (userData.uid !== userId) {
+                        const userItem = document.createElement('div');
+                        userItem.classList.add('bg-gray-700', 'p-4', 'rounded-lg', 'flex', 'items-center', 'justify-between', 'cursor-pointer', 'hover:bg-gray-600', 'transition-colors', 'duration-200', 'mb-2');
+                        userItem.innerHTML = `
+                            <div>
+                                <p class="text-gray-100 font-bold">${userData.name}</p>
+                                <p class="text-gray-400 text-sm truncate">${userData.email}</p>
+                            </div>
+                            <button class="bg-green-600 text-white px-3 py-1 rounded-lg text-sm">Chat</button>
+                        `;
+                        userItem.addEventListener('click', () => startChat(userData.uid, userData.name));
+                        usersList.appendChild(userItem);
+                    }
+                });
+            }, (error) => {
+                console.error("Error fetching users:", error);
+                showMessage("Failed to load users for contact.", true);
+            });
+        };
+
+        window.deleteData = async (docId) => {
+            if (!userState) {
+                showMessage("You must be logged in to delete data.", true);
+                return;
+            }
+            try {
+                const dataCollectionRef = collection(db, 'artifacts', appId, 'users', userState.uid, 'mrv_data');
+                await deleteDoc(doc(dataCollectionRef, docId));
+                showMessage('Data entry deleted successfully.');
+            } catch (error) {
+                showMessage(`Failed to delete data: ${error.message}`, true);
+            }
+        };
+
+        // Main App Event Listeners
+        editFarmerBtn.addEventListener('click', () => {
+            if (!userState) {
+                showMessage("You must be logged in to edit details.", true);
+                return;
+            }
+            const farmerName = farmerNameElem.textContent === 'N/A' ? '' : farmerNameElem.textContent;
+            const farmerLocation = farmerLocationElem.textContent === 'N/A' ? '' : farmerLocationElem.textContent;
+            const farmSize = farmerNameElem.textContent === 'N/A' ? '' : farmerNameElem.textContent;
+
+            modalNameInput.value = farmerName;
+            modalLocationInput.value = farmerLocation;
+            modalSizeInput.value = farmSize;
+            farmerModal.style.display = 'flex';
+        });
+
+        closeModalBtn.addEventListener('click', () => {
+            farmerModal.style.display = 'none';
+        });
+
+        farmerDetailsForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            if (!userState) {
+                showMessage("You must be logged in to save details.", true);
+                return;
+            }
+            const name = modalNameInput.value;
+            const location = modalLocationInput.value;
+            const size = parseInt(modalSizeInput.value);
+            
+            try {
+                const farmerDocRef = doc(db, 'artifacts', appId, 'users', userState.uid, 'farmer_details', 'data');
+                await setDoc(farmerDocRef, { name, location, size }, { merge: true });
+                showMessage('Farmer details saved successfully!');
+                farmerModal.style.display = 'none';
+            } catch (error) {
+                showMessage(`Failed to save details: ${error.message}`, true);
+            }
+        });
+
+        dataEntryForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            if (!userState) {
+                showMessage("You must be logged in to add data.", true);
+                return;
+            }
+            const newEntry = {
+                date: document.getElementById('date-input').value,
+                yield: parseInt(document.getElementById('yield-input').value),
+                trees: parseInt(document.getElementById('trees-input').value)
+            };
+            try {
+                const dataCollectionRef = collection(db, 'artifacts', appId, 'users', userState.uid, 'mrv_data');
+                await addDoc(dataCollectionRef, newEntry);
+                showMessage('Data added successfully!');
+                dataEntryForm.reset();
+                dateInput.value = new Date().toISOString().substring(0, 10);
+            } catch (error) {
+                showMessage(`Failed to add data: ${error.message}`, true);
+            }
+        });
+
+        // Gemini API Functions
+        summarizeBtn.addEventListener('click', async () => {
+            if (!userState) {
+                showMessage("You must be logged in to use this feature.", true);
+                return;
+            }
+
+            summaryContent.textContent = '';
+            summaryModal.style.display = 'flex';
+            summaryLoading.classList.remove('hidden');
+
+            try {
+                const q = query(collection(db, 'artifacts', appId, 'users', userState.uid, 'mrv_data'));
+                const querySnapshot = await getDocs(q);
+                let dataText = "";
+
+                if (querySnapshot.empty) {
+                    summaryContent.textContent = "Please add some data first to get a summary.";
+                    summaryLoading.classList.add('hidden');
+                    return;
+                }
+
+                querySnapshot.forEach(doc => {
+                    const data = doc.data();
+                    dataText += `Date: ${data.date}, Yield: ${data.yield} kg, Trees Planted: ${data.trees}\n`;
+                });
+
+                const prompt = `Based on the following agroforestry data, provide a concise summary of the farmer's progress. Highlight key trends, achievements, or any notable metrics related to yield and tree planting. Use a friendly and encouraging tone.\n\nData:\n${dataText}`;
+                
+                const payload = {
+                    contents: [{ parts: [{ text: prompt }] }],
+                    generationConfig: {
+                        temperature: 0.7,
+                        topP: 0.95,
+                        topK: 40,
+                    },
+                };
+                
+                const response = await fetch(API_URL_GENERATION, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+                
+                if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+                const result = await response.json();
+                const generatedText = result?.candidates?.[0]?.content?.parts?.[0]?.text;
+                if (generatedText) {
+                    summaryContent.textContent = generatedText;
+                } else {
+                    summaryContent.textContent = "Could not generate summary. Please try again.";
+                }
+
+            } catch (error) {
+                console.error("Error generating summary:", error);
+                summaryContent.textContent = "An error occurred while generating the summary. Please check your network connection and try again.";
+            } finally {
+                summaryLoading.classList.add('hidden');
+            }
+        });
+
+        fetchNewsBtn.addEventListener('click', async () => {
+            newsContent.innerHTML = '';
+            newsLoading.classList.remove('hidden');
+            
+            try {
+                const systemPrompt = "You are a professional news analyst. Provide a concise, single-paragraph summary of the key findings from recent news.";
+                const userQuery = "Provide a summary of the latest news and developments in agricultural carbon projects, MRV, and carbon markets.";
+                
+                const payload = {
+                    contents: [{ parts: [{ text: userQuery }] }],
+                    tools: [{ "google_search": {} }],
+                    systemInstruction: {
+                        parts: [{ text: systemPrompt }]
+                    },
+                };
+
+                const response = await fetch(API_URL_GENERATION, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+
+                if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+                const result = await response.json();
+                const candidate = result?.candidates?.[0];
+                const text = candidate?.content?.parts?.[0]?.text;
+                let sources = [];
+                if (candidate?.groundingMetadata?.groundingAttributions) {
+                    sources = candidate.groundingMetadata.groundingAttributions.map(attribution => ({ uri: attribution.web?.uri, title: attribution.web?.title })).filter(source => source.uri && source.title);
+                }
+
+                if (text) {
+                    let fullText = `<p>${text}</p>`;
+                    if (sources.length > 0) {
+                        fullText += `<p class="mt-4 text-xs italic">Sources:</p><ul>`;
+                        sources.forEach(source => {
+                            fullText += `<li class="text-xs truncate"><a href="${source.uri}" target="_blank" class="text-blue-400 hover:underline">${source.title}</a></li>`;
+                        });
+                        fullText += `</ul>`;
+                    }
+                    newsContent.innerHTML = fullText;
+                } else {
+                    newsContent.textContent = "Could not fetch news. Please try again.";
+                }
+
+            } catch (error) {
+                console.error("Error fetching news:", error);
+                newsContent.textContent = "An error occurred while fetching news. Please check your network connection and try again.";
+            } finally {
+                newsLoading.classList.add('hidden');
+            }
+        });
+
+        closeSummaryModalBtn.addEventListener('click', () => {
+            summaryModal.style.display = 'none';
+        });
+
+        // Assistant Chat
+        assistantSendBtn.addEventListener('click', async () => {
+            const userMessage = assistantInput.value.trim();
+            if (!userMessage) return;
+
+            addMessageToAssistantChat(userMessage, 'user');
+            assistantInput.value = '';
+            assistantLoading.classList.remove('hidden');
+
+            try {
+                const payload = {
+                    contents: [{ parts: [{ text: userMessage }] }],
+                };
+                const response = await fetch(API_URL_GENERATION, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+                if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+                const result = await response.json();
+                const generatedText = result?.candidates?.[0]?.content?.parts?.[0]?.text;
+                if (generatedText) {
+                    addMessageToAssistantChat(generatedText, 'assistant');
+                } else {
+                    addMessageToAssistantChat("Sorry, I couldn't generate a response.", 'assistant');
+                }
+            } catch (error) {
+                console.error("Error with assistant:", error);
+                addMessageToAssistantChat("An error occurred. Please try again.", 'assistant');
+            } finally {
+                assistantLoading.classList.add('hidden');
+                assistantChat.scrollTop = assistantChat.scrollHeight;
+            }
+        });
+
+        function addMessageToAssistantChat(message, sender) {
+            const messageDiv = document.createElement('div');
+            messageDiv.classList.add('chat-message', sender);
+            messageDiv.textContent = message;
+            assistantChat.appendChild(messageDiv);
+        }
+
+        // Contact Form
+        contactForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const message = contactForm.querySelector('textarea').value;
+            if (!message.trim()) return;
+
+            try {
+                const contactCollectionRef = collection(db, 'artifacts', appId, 'public', 'data', 'contact_messages');
+                await addDoc(contactCollectionRef, {
+                    senderId: userState.uid,
+                    senderEmail: userState.email,
+                    message: message,
+                    timestamp: serverTimestamp()
+                });
+                showMessage('Your message has been sent!');
+                contactForm.reset();
+            } catch (error) {
+                showMessage(`Failed to send message: ${error.message}`, true);
+            }
+        });
+
+        // User Chat
+        async function startChat(otherUserId, otherUserName) {
+            if (!userState) {
+                showMessage("You must be logged in to chat.", true);
+                return;
+            }
+
+            chatTitle.textContent = `Chat with ${otherUserName}`;
+            chatMessages.innerHTML = '';
+            chatModal.style.display = 'flex';
+
+            const user1 = userState.uid;
+            const user2 = otherUserId;
+            const chatId = user1 < user2 ? `${user1}_${user2}` : `${user2}_${user1}`;
+            currentChatId = chatId;
+
+            if (unsubscribeChat) unsubscribeChat();
+
+            const messagesRef = collection(db, 'artifacts', appId, 'public', 'data', 'chats', chatId, 'messages');
+            const q = query(messagesRef);
+
+            unsubscribeChat = onSnapshot(q, (snapshot) => {
+                chatMessages.innerHTML = '';
+                snapshot.forEach(doc => {
+                    const messageData = doc.data();
+                    addMessageToChat(messageData.text, messageData.senderId === userState.uid ? 'user' : 'other');
+                });
+                chatMessages.scrollTop = chatMessages.scrollHeight;
+            }, (error) => {
+                console.error("Error fetching chat messages:", error);
+                showMessage("Failed to load chat messages.", true);
+            });
+        }
+
+        chatSendBtn.addEventListener('click', async () => {
+            const messageText = chatInput.value.trim();
+            if (!messageText || !currentChatId) return;
+
+            const messagesRef = collection(db, 'artifacts', appId, 'public', 'data', 'chats', currentChatId, 'messages');
+            try {
+                await addDoc(messagesRef, {
+                    senderId: userState.uid,
+                    text: messageText,
+                    timestamp: serverTimestamp()
+                });
+                chatInput.value = '';
+            } catch (error) {
+                console.error("Error sending message:", error);
+                showMessage("Failed to send message.", true);
+            }
+        });
+
+        function addMessageToChat(message, sender) {
+            const messageDiv = document.createElement('div');
+            messageDiv.classList.add('chat-message', sender === 'user' ? 'user' : 'assistant');
+            messageDiv.textContent = message;
+            chatMessages.appendChild(messageDiv);
+        }
+
+        closeChatModalBtn.addEventListener('click', () => {
+            if (unsubscribeChat) unsubscribeChat();
+            chatModal.style.display = 'none';
+        });
+
+        // Set the date input to today's date on page load
+        window.onload = function() {
+            dateInput.value = new Date().toISOString().substring(0, 10);
+            fetchNewsBtn.click();
+            switchTab('home');
+        };
+    </script>
+
+    <!-- Auth Screen -->
+    <div id="auth-screen" class="w-full max-w-lg mx-auto p-8 rounded-xl shadow-lg bg-gray-800 text-gray-100 transition-opacity duration-500">
+        <h1 class="text-4xl font-bold text-center mb-4 text-green-400">Welcome</h1>
+        <p class="text-center text-gray-400 mb-6">Sign in or register to get started.</p>
+        
+        <div id="loading-indicator" class="text-center">
+            <svg class="animate-spin h-8 w-8 mx-auto text-green-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+            </svg>
+        </div>
+
+        <form id="login-form" class="space-y-6">
+            <h2 class="text-2xl font-semibold text-center text-green-400">Login</h2>
+            <div>
+                <label for="login-email" class="block text-gray-300">Email</label>
+                <input type="email" id="login-email" name="email" required class="w-full px-4 py-2 mt-1 rounded-lg bg-gray-700 border border-gray-600 focus:ring-green-500 focus:border-green-500 text-gray-100">
+            </div>
+            <div>
+                <label for="login-password" class="block text-gray-300">Password</label>
+                <input type="password" id="login-password" name="password" required class="w-full px-4 py-2 mt-1 rounded-lg bg-gray-700 border border-gray-600 focus:ring-green-500 focus:border-green-500 text-gray-100">
+            </div>
+            <button type="submit" class="w-full bg-green-600 hover:bg-green-700 text-white font-bold py-3 rounded-lg transition-colors duration-300">
+                Sign In
+            </button>
+            <p class="text-center text-gray-400">Don't have an account? <a href="#" id="register-toggle" class="text-blue-400 hover:text-blue-300">Register here</a></p>
+        </form>
+
+        <form id="register-form" class="space-y-6 hidden">
+            <h2 class="text-2xl font-semibold text-center text-green-400">Register</h2>
+            <div>
+                <label for="register-email" class="block text-gray-300">Email</label>
+                <input type="email" id="register-email" name="email" required class="w-full px-4 py-2 mt-1 rounded-lg bg-gray-700 border border-gray-600 focus:ring-green-500 focus:border-green-500 text-gray-100">
+            </div>
+            <div>
+                <label for="register-password" class="block text-gray-300">Password</label>
+                <input type="password" id="register-password" name="password" required class="w-full px-4 py-2 mt-1 rounded-lg bg-gray-700 border border-gray-600 focus:ring-green-500 focus:border-green-500 text-gray-100">
+            </div>
+            <button type="submit" class="w-full bg-green-600 hover:bg-green-700 text-white font-bold py-3 rounded-lg transition-colors duration-300">
+                Register
+            </button>
+            <p class="text-center text-gray-400">Already have an account? <a href="#" id="login-toggle" class="text-blue-400 hover:text-blue-300">Login here</a></p>
+        </form>
+    </div>
+
+    <!-- Main Application UI -->
+    <div id="main-app" class="hidden w-full max-w-4xl p-6">
+        <div class="flex justify-between items-center mb-6">
+            <h1 class="text-4xl font-bold text-blue-400">Scalable MRV</h1>
+            <button id="logout-btn" class="bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-4 rounded-lg transition-colors duration-300">
+                Logout
+            </button>
+        </div>
+
+        <!-- Tab Navigation -->
+        <div class="flex border-b border-gray-700 mb-6">
+            <button id="home-tab-btn" class="tab-button px-4 py-2 font-medium text-gray-400 hover:text-gray-100 transition-colors duration-200">Home</button>
+            <button id="assistant-tab-btn" class="tab-button px-4 py-2 font-medium text-gray-400 hover:text-gray-100 transition-colors duration-200">Assistant</button>
+            <button id="contacts-tab-btn" class="tab-button px-4 py-2 font-medium text-gray-400 hover:text-gray-100 transition-colors duration-200">Contacts</button>
+            <button id="contact-tab-btn" class="tab-button px-4 py-2 font-medium text-gray-400 hover:text-gray-100 transition-colors duration-200">Contact</button>
+        </div>
+
+        <!-- Tab Contents -->
+        <div id="home-tab-content" class="tab-content active w-full grid grid-cols-1 md:grid-cols-2 gap-8">
+            <!-- User Profile Card -->
+            <div class="bg-gray-800 rounded-xl shadow-lg p-6">
+                <h2 class="text-2xl font-semibold text-gray-100 mb-4">User Profile</h2>
+                <div class="bg-gray-700 rounded-lg p-4">
+                    <p class="text-gray-300"><span class="font-medium text-gray-100">Email:</span> <span id="user-email-display">N/A</span></p>
+                    <p class="text-gray-300 truncate"><span class="font-medium text-gray-100">User ID:</span> <span id="user-id-display">N/A</span></p>
+                </div>
+            </div>
+
+            <!-- Farmer Information Card -->
+            <div class="bg-gray-800 rounded-xl shadow-lg p-6">
+                <h2 class="text-2xl font-semibold text-gray-100 mb-4">Farmer Details</h2>
+                <div id="farmer-info" class="space-y-4">
+                    <div class="bg-gray-700 rounded-lg p-4">
+                        <p class="text-gray-300"><span class="font-medium text-gray-100">Farmer Name:</span> <span id="farmer-name">N/A</span></p>
+                        <p class="text-gray-300"><span class="font-medium text-gray-100">Location:</span> <span id="farmer-location">N/A</span></p>
+                        <p class="text-gray-300"><span class="font-medium text-gray-100">Farm Size:</span> <span id="farm-size">N/A</span> acres</p>
+                    </div>
+                    <button id="edit-farmer-btn" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-lg transition-colors duration-300">
+                        Update Farmer Details
+                    </button>
+                </div>
+            </div>
+
+            <!-- Daily MRV Updates Card -->
+            <div class="bg-gray-800 rounded-xl shadow-lg p-6 md:col-span-2">
+                <h2 class="text-2xl font-semibold text-gray-100 mb-4">Daily MRV Updates</h2>
+                <div id="news-content" class="prose prose-sm text-gray-300">
+                    <p>
+                        Monitoring, Reporting, and Verification (MRV) is the backbone of any effective climate project. It's the process of
+                        quantifying carbon benefits, ensuring transparency, and building trust in the market. In agroforestry and rice farming,
+                        accurate MRV helps connect sustainable practices with verifiable carbon credits.
+                    </p>
+                    <p>
+                        Keeping track of key metrics like crop yield and tree growth is vital for both environmental impact and financial returns.
+                        Our platform simplifies this process, allowing you to easily log data and see the real-time impact of your efforts.
+                    </p>
+                </div>
+                <div id="news-loading" class="text-center mt-4 hidden">
+                    <svg class="animate-spin h-6 w-6 mx-auto text-green-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                </div>
+                <button id="fetch-news-btn" class="w-full bg-purple-600 hover:bg-purple-700 text-white font-bold py-2 px-4 rounded-lg mt-4 transition-colors duration-300">
+                    ✨ Latest MRV News
+                </button>
+            </div>
+
+            <!-- Data Entry Card -->
+            <div class="bg-gray-800 rounded-xl shadow-lg p-6 md:col-span-2">
+                <h2 class="text-2xl font-semibold text-gray-100 mb-4">Log Your Daily Data</h2>
+                <form id="data-entry-form" class="space-y-4">
+                    <div>
+                        <label for="date-input" class="block text-gray-300 font-medium mb-1">Date</label>
+                        <input type="date" id="date-input" required class="w-full px-4 py-2 border border-gray-600 rounded-lg bg-gray-700 text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500">
+                    </div>
+                    <div>
+                        <label for="yield-input" class="block text-gray-300 font-medium mb-1">Rice Yield (kg)</label>
+                        <input type="number" id="yield-input" required min="0" class="w-full px-4 py-2 border border-gray-600 rounded-lg bg-gray-700 text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500">
+                    </div>
+                    <div>
+                        <label for="trees-input" class="block text-gray-300 font-medium mb-1">Trees Planted (count)</label>
+                        <input type="number" id="trees-input" required min="0" class="w-full px-4 py-2 border border-gray-600 rounded-lg bg-gray-700 text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500">
+                    </div>
+                    <button type="submit" class="w-full bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded-lg transition-colors duration-300">
+                        Add Data
+                    </button>
+                </form>
+            </div>
+
+            <!-- Data Visualization Table -->
+            <div class="bg-gray-800 rounded-xl shadow-lg p-6 md:col-span-2">
+                <h2 class="text-2xl font-semibold text-gray-100 mb-4">Collected Data</h2>
+                <div class="overflow-x-auto">
+                    <table class="min-w-full bg-gray-700 rounded-lg overflow-hidden">
+                        <thead class="bg-green-600 text-white">
+                            <tr>
+                                <th class="py-3 px-4 text-left">Date</th>
+                                <th class="py-3 px-4 text-left">Rice Yield (kg)</th>
+                                <th class="py-3 px-4 text-left">Trees Planted</th>
+                                <th class="py-3 px-4 text-left">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="data-table-body" class="text-gray-200">
+                            <!-- Data rows will be inserted here by JavaScript -->
+                        </tbody>
+                    </table>
+                </div>
+                <p id="no-data-message" class="text-center text-gray-500 mt-4 hidden">No data has been logged yet.</p>
+                <button id="summarize-btn" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-lg mt-4 transition-colors duration-300">
+                    ✨ Carbon Impact Summary
+                </button>
+            </div>
+        </div>
+
+        <!-- Assistant Tab Content -->
+        <div id="assistant-tab-content" class="tab-content w-full p-6 bg-gray-800 rounded-xl shadow-lg h-[600px] flex flex-col">
+            <h2 class="text-2xl font-semibold text-gray-100 mb-4">AI Assistant</h2>
+            <div id="assistant-chat" class="flex-grow overflow-y-auto mb-4 p-4 border border-gray-700 rounded-lg flex flex-col space-y-2">
+                <div class="chat-message assistant">Hello! I am your AI assistant. I can help answer questions about MRV, carbon projects, or your logged data.</div>
+            </div>
+            <div id="assistant-loading" class="text-center hidden">
+                <svg class="animate-spin h-6 w-6 mx-auto text-green-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                </svg>
+            </div>
+            <div class="flex">
+                <input id="assistant-input" type="text" placeholder="Ask me anything..." class="flex-grow px-4 py-2 rounded-l-lg bg-gray-700 border border-gray-600 text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500">
+                <button id="assistant-send-btn" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-r-lg transition-colors duration-300">Send</button>
+            </div>
+        </div>
+
+        <!-- Contacts Tab Content -->
+        <div id="contacts-tab-content" class="tab-content w-full p-6 bg-gray-800 rounded-xl shadow-lg">
+            <h2 class="text-2xl font-semibold text-gray-100 mb-4">Contacts</h2>
+            <div id="users-list" class="space-y-4">
+                <!-- User list will be populated by JavaScript -->
+                <p id="no-users-message" class="text-center text-gray-500 mt-4">No other users found.</p>
+            </div>
+        </div>
+
+        <!-- Contact Us Tab Content -->
+        <div id="contact-tab-content" class="tab-content w-full p-6 bg-gray-800 rounded-xl shadow-lg">
+            <h2 class="text-2xl font-semibold text-gray-100 mb-4">Contact Us</h2>
+            <p class="text-gray-300 mb-4">Have a question or feedback? Send us a message.</p>
+            <form id="contact-form" class="space-y-4">
+                <div>
+                    <label for="contact-message" class="block text-gray-300 font-medium mb-1">Your Message</label>
+                    <textarea id="contact-message" rows="4" required class="w-full px-4 py-2 border border-gray-600 rounded-lg bg-gray-700 text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"></textarea>
+                </div>
+                <button type="submit" class="w-full bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded-lg transition-colors duration-300">
+                    Send Message
+                </button>
+            </form>
+        </div>
+    </div>
+
+    <!-- Modal for Farmer Details -->
+    <div id="farmer-modal" class="modal">
+        <div class="modal-content w-full max-w-md">
+            <h3 class="text-2xl font-semibold text-gray-100 mb-4">Update Farmer Details</h3>
+            <form id="farmer-details-form" class="space-y-4">
+                <div>
+                    <label for="modal-name-input" class="block text-gray-300 font-medium mb-1">Farmer Name</label>
+                    <input type="text" id="modal-name-input" required class="w-full px-4 py-2 border border-gray-600 rounded-lg bg-gray-700 text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500">
+                </div>
+                <div>
+                    <label for="modal-location-input" class="block text-gray-300 font-medium mb-1">Location</label>
+                    <input type="text" id="modal-location-input" required class="w-full px-4 py-2 border border-gray-600 rounded-lg bg-gray-700 text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500">
+                </div>
+                <div>
+                    <label for="modal-size-input" class="block text-gray-300 font-medium mb-1">Farm Size (acres)</label>
+                    <input type="number" id="modal-size-input" required min="0" class="w-full px-4 py-2 border border-gray-600 rounded-lg bg-gray-700 text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500">
+                </div>
+                <div class="flex justify-end space-x-2">
+                    <button type="button" id="close-modal-btn" class="bg-gray-600 hover:bg-gray-700 text-white font-bold py-2 px-4 rounded-lg transition-colors duration-300">Cancel</button>
+                    <button type="submit" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-lg transition-colors duration-300">Save</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Modal for Carbon Impact Summary -->
+    <div id="summary-modal" class="modal">
+        <div class="modal-content w-full max-w-2xl">
+            <h3 class="text-2xl font-semibold text-gray-100 mb-4">Carbon Impact Summary</h3>
+            <div id="summary-content" class="prose prose-sm text-gray-300"></div>
+            <div id="summary-loading" class="text-center mt-4 hidden">
+                <svg class="animate-spin h-8 w-8 mx-auto text-green-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                </svg>
+            </div>
+            <div class="flex justify-end space-x-2 mt-4">
+                <button type="button" id="close-summary-modal" class="bg-gray-600 hover:bg-gray-700 text-white font-bold py-2 px-4 rounded-lg transition-colors duration-300">Close</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Message Box -->
+    <div id="message-box" class="modal">
+        <div class="modal-content w-full max-w-sm border-2 rounded-lg">
+            <div class="flex justify-between items-start">
+                <p id="message-text" class="text-lg font-medium"></p>
+                <button id="close-message-box" class="text-gray-400 hover:text-gray-100 transition-colors">
+                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+                </button>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Chat Modal -->
+    <div id="chat-modal" class="modal">
+        <div class="modal-content w-full max-w-lg h-3/4 flex flex-col">
+            <div class="flex justify-between items-center mb-4">
+                <h3 id="chat-title" class="text-2xl font-semibold text-gray-100">Chat</h3>
+                <button id="close-chat-modal" class="text-gray-400 hover:text-gray-100 transition-colors">
+                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+                </button>
+            </div>
+            <div id="chat-messages" class="flex-grow overflow-y-auto p-4 border border-gray-700 rounded-lg flex flex-col space-y-2">
+                <!-- Messages will be populated by JavaScript -->
+            </div>
+            <div class="flex mt-4">
+                <input id="chat-input" type="text" placeholder="Type a message..." class="flex-grow px-4 py-2 rounded-l-lg bg-gray-700 border border-gray-600 text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500">
+                <button id="chat-send-btn" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-r-lg transition-colors duration-300">Send</button>
+            </div>
+        </div>
+    </div>
+</body>
+</html>
